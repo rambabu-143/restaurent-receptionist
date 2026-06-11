@@ -1,0 +1,14 @@
+[project]
+name = "restarent-receptionist"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "livekit-agents>=1.5.17",
+    "livekit-plugins-openai",
+    "livekit-plugins-sarvam>=1.5.17",
+    "livekit-plugins-silero>=1.5.17",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+]
