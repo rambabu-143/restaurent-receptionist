@@ -15,6 +15,10 @@ wheels/
 # Call data (contains customer PII)
 data/
 
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
 # Misc
 image.png
 graphify-out/
