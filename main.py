@@ -28,7 +28,7 @@ from livekit import rtc
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, ModelSettings, RunContext, cli
 from livekit.agents.llm import function_tool
 from livekit.plugins import openai as livekit_openai
-from livekit.plugins import sarvam, silero
+from livekit.plugins import elevenlabs, sarvam, silero
 
 logger = logging.getLogger("restaurant-receptionist")
 logger.setLevel(logging.INFO)
@@ -67,29 +67,20 @@ def save_call_data(call_type: str, userdata: "UserData") -> None:
     logger.info(f"call data saved → {filepath}")
 
 
-# Sarvam TTS instances per language with speakers chosen for naturalness.
-# priya → English, ritu → Hindi, kavitha → Telugu
-_SARVAM_TTS: dict[str, sarvam.TTS] = {
-    "en-IN": sarvam.TTS(target_language_code="en-IN", model="bulbul:v3", speaker="priya"),
-    "hi-IN": sarvam.TTS(target_language_code="hi-IN", model="bulbul:v3", speaker="ritu"),
-    "te-IN": sarvam.TTS(target_language_code="te-IN", model="bulbul:v3", speaker="kavitha"),
+# ElevenLabs voice IDs per agent — different voices signal handoff to the caller.
+_VOICES = {
+    "greeter":     "cgSgspJ2msm6clMCkdW9",  # Jessica — warm, friendly
+    "reservation": "EXAVITQu4vr4xnSDxMaL",  # Sarah   — calm, clear
+    "takeaway":    "pNInz6obpgDQGcFmaJgB",  # Adam    — friendly male
+    "checkout":    "XB0fDUnXU5powFXDhCwa",  # Charlotte— professional
 }
 
 
-def _detect_language(text: str) -> str:
-    """Detect language from Unicode script ranges.
-
-    Telugu: U+0C00–U+0C7F  →  te-IN
-    Devanagari (Hindi): U+0900–U+097F  →  hi-IN
-    Fallback: en-IN
-    """
-    telugu = sum(1 for c in text if "ఀ" <= c <= "౿")
-    hindi  = sum(1 for c in text if "ऀ" <= c <= "ॿ")
-    if telugu > 2:
-        return "te-IN"
-    if hindi > 2:
-        return "hi-IN"
-    return "en-IN"
+def _elevenlabs_tts(role: str) -> elevenlabs.TTS:
+    return elevenlabs.TTS(
+        voice_id=_VOICES[role],
+        model="eleven_multilingual_v2",
+    )
 
 # Groq model used for all agents' LLM inference.
 GROQ_MODEL = "llama-3.3-70b-versatile"
@@ -316,8 +307,7 @@ class BaseAgent(Agent):
         if not cleaned:
             return
 
-        lang = _detect_language(cleaned)
-        async for audio_event in _SARVAM_TTS[lang].synthesize(cleaned):
+        async for audio_event in self._tts.synthesize(cleaned):
             yield audio_event.frame
 
     async def _transfer_to_agent(self, name: str, context: RunContext_T) -> tuple[Agent, str]:
@@ -352,7 +342,7 @@ class Greeter(BaseAgent):
             # parallel_tool_calls=False prevents the greeter from triggering
             # two transfers at once if the model gets confused.
             llm=groq_llm(parallel_tool_calls=False),
-            tts=_SARVAM_TTS["en-IN"],
+            tts=_elevenlabs_tts("greeter"),
         )
         self.menu = menu
 
@@ -392,7 +382,7 @@ class Reservation(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[update_name, update_phone, to_greeter],
-            tts=_SARVAM_TTS["en-IN"],
+            tts=_elevenlabs_tts("reservation"),
         )
 
     @function_tool()
@@ -441,7 +431,7 @@ class Takeaway(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[to_greeter],
-            tts=_SARVAM_TTS["en-IN"],
+            tts=_elevenlabs_tts("takeaway"),
         )
 
     @function_tool()
@@ -486,7 +476,7 @@ class Checkout(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[update_name, update_phone, to_greeter],
-            tts=_SARVAM_TTS["en-IN"],
+            tts=_elevenlabs_tts("checkout"),
         )
 
     @function_tool()
@@ -575,7 +565,7 @@ async def entrypoint(ctx: JobContext):
         userdata=userdata,
         stt=sarvam.STT(language="unknown", model="saarika:v2.5"),
         llm=groq_llm(),
-        tts=_SARVAM_TTS["en-IN"],
+        tts=_elevenlabs_tts("greeter"),
         vad=_vad,
         # Caps the number of consecutive tool calls per turn to prevent loops.
         max_tool_steps=5,
