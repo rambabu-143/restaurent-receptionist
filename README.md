@@ -1,3 +1,13 @@
+---
+title: Spice Garden Receptionist
+emoji: 🍛
+colorFrom: orange
+colorTo: red
+sdk: docker
+app_port: 8080
+pinned: true
+---
+
 # Restaurant Receptionist
 
 A voice AI receptionist for **Spice Garden Restaurant** built on [LiveKit Agents](https://docs.livekit.io/agents/). Handles table reservations and takeaway orders over a live phone/web call.
