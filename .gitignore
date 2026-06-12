@@ -15,9 +15,8 @@ wheels/
 # Call data (contains customer PII)
 data/
 
-# Frontend build artifacts
-frontend/node_modules/
-frontend/dist/
+# Frontend (lives in its own repo now)
+frontend/
 
 # Misc
 image.png
