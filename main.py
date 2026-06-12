@@ -28,7 +28,7 @@ from livekit import rtc
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, ModelSettings, RunContext, cli
 from livekit.agents.llm import function_tool
 from livekit.plugins import openai as livekit_openai
-from livekit.plugins import sarvam, silero
+from livekit.plugins import elevenlabs, sarvam, silero
 
 logger = logging.getLogger("restaurant-receptionist")
 logger.setLevel(logging.INFO)
@@ -67,13 +67,13 @@ def save_call_data(call_type: str, userdata: "UserData") -> None:
     logger.info(f"call data saved → {filepath}")
 
 
-# Sarvam bulbul:v3 speaker assigned to each agent role.
+# ElevenLabs voice IDs per agent role.
 # Different voices help callers notice they've been transferred.
 voices = {
-    "greeter": "priya",
-    "reservation": "ritu",
-    "takeaway": "rahul",
-    "checkout": "kavya",
+    "greeter":     "cgSgspJ2msm6clMCkdW9",  # Jessica — warm, friendly
+    "reservation": "EXAVITQu4vr4xnSDxMaL",  # Sarah   — calm, clear
+    "takeaway":    "pNInz6obpgDQGcFmaJgB",  # Adam    — friendly male
+    "checkout":    "XB0fDUnXU5powFXDhCwa",  # Charlotte— professional
 }
 
 # Groq model used for all agents' LLM inference.
@@ -92,16 +92,15 @@ PLAIN_TEXT_RULE = (
 )
 
 
-def sarvam_tts(speaker: str) -> sarvam.TTS:
-    """Return a Sarvam TTS instance using the given speaker voice.
+def elevenlabs_tts(voice_id: str) -> elevenlabs.TTS:
+    """Return an ElevenLabs TTS instance for the given voice.
 
-    Uses bulbul:v3 with English (India) as the target language.
-    The SARVAM_API_KEY env var is picked up automatically.
+    Uses eleven_turbo_v2_5 — best balance of naturalness and low latency.
+    ELEVENLABS_API_KEY is read from the environment.
     """
-    return sarvam.TTS(
-        target_language_code="en-IN",
-        model="bulbul:v3",
-        speaker=speaker,
+    return elevenlabs.TTS(
+        voice_id=voice_id,
+        model="eleven_turbo_v2_5",
     )
 
 
@@ -298,15 +297,15 @@ class BaseAgent(Agent):
     ) -> AsyncIterable[rtc.AudioFrame]:
         """Intercept text before TTS, strip markdown and leaked tool-call JSON.
 
-        Tokens are buffered until a sentence boundary (. ! ?) or 80 chars so
-        that Sarvam never receives a single letter as its synthesis input.
+        Buffer the full response before passing to Sarvam so the entire reply
+        is synthesised in one request — eliminates the inter-sentence pause
+        caused by multiple back-to-back synthesis calls.
         """
         async def clean(stream: AsyncIterable[str]) -> AsyncIterable[str]:
             buffer = ""
             async for chunk in stream:
                 buffer += chunk
-                # Yield on sentence end or once we have enough content.
-                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 250:
+                if re.search(r"[.!?]\s*$", buffer):
                     cleaned = _strip_markdown(buffer)
                     buffer = ""
                     if cleaned:
@@ -338,9 +337,9 @@ class Greeter(BaseAgent):
     def __init__(self, menu: str) -> None:
         super().__init__(
             instructions=(
-                "You are Priya, a warm receptionist at Spice Garden restaurant.\n"
+                "You are Luna, a warm receptionist at Spice Garden restaurant.\n"
                 f"Menu: {menu}\n\n"
-                "Greet the caller warmly, then ask what they need.\n"
+                "Greet the caller warmly by saying your name is Luna, then ask what they need.\n"
                 "- If they want a table reservation → call to_reservation.\n"
                 "- If they want to order food → call to_takeaway.\n"
                 "- If they ask about the menu, tell them briefly what is available.\n"
@@ -350,7 +349,7 @@ class Greeter(BaseAgent):
             # parallel_tool_calls=False prevents the greeter from triggering
             # two transfers at once if the model gets confused.
             llm=groq_llm(parallel_tool_calls=False),
-            tts=sarvam_tts(voices["greeter"]),
+            tts=elevenlabs_tts(voices["greeter"]),
         )
         self.menu = menu
 
@@ -390,7 +389,7 @@ class Reservation(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[update_name, update_phone, to_greeter],
-            tts=sarvam_tts(voices["reservation"]),
+            tts=elevenlabs_tts(voices["reservation"]),
         )
 
     @function_tool()
@@ -439,7 +438,7 @@ class Takeaway(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[to_greeter],
-            tts=sarvam_tts(voices["takeaway"]),
+            tts=elevenlabs_tts(voices["takeaway"]),
         )
 
     @function_tool()
@@ -484,7 +483,7 @@ class Checkout(BaseAgent):
                 + PLAIN_TEXT_RULE
             ),
             tools=[update_name, update_phone, to_greeter],
-            tts=sarvam_tts(voices["checkout"]),
+            tts=elevenlabs_tts(voices["checkout"]),
         )
 
     @function_tool()
@@ -540,6 +539,8 @@ class Checkout(BaseAgent):
 # Session entry point
 # ---------------------------------------------------------------------------
 
+_vad: silero.VAD | None = None
+
 server = AgentServer()
 
 
@@ -550,10 +551,13 @@ async def entrypoint(ctx: JobContext):
     Creates all four agents upfront and stores them in UserData so any agent
     can look up and transfer to another by name. The session is wired with:
       - STT: Sarvam saarika:v2.5 (streaming, via WebSocket)
-      - LLM: Ollama llama3.2 (local, OpenAI-compatible endpoint)
+      - LLM: Groq llama-3.3-70b-versatile (cloud, OpenAI-compatible endpoint)
       - TTS: Sarvam bulbul:v3 (streaming, per-agent voice)
       - VAD: Silero (local voice activity detection)
     """
+    global _vad
+    if _vad is None:
+        _vad = silero.VAD.load()
     menu = "Pizza: $10, Salad: $5, Ice Cream: $3, Coffee: $2"
     userdata = UserData()
     userdata.agents.update(
@@ -568,8 +572,8 @@ async def entrypoint(ctx: JobContext):
         userdata=userdata,
         stt=sarvam.STT(language="en-IN", model="saarika:v2.5"),
         llm=groq_llm(),
-        tts=sarvam_tts(voices["greeter"]),
-        vad=silero.VAD.load(),
+        tts=elevenlabs_tts(voices["greeter"]),
+        vad=_vad,
         # Caps the number of consecutive tool calls per turn to prevent loops.
         max_tool_steps=5,
     )
