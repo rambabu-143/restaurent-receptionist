@@ -36,7 +36,7 @@ async def token_handler(request: web.Request) -> web.Response:
 
     return web.json_response(
         {
-            "token": await token.to_jwt(),
+            "token": token.to_jwt(),
             "url": os.environ["LIVEKIT_URL"],
             "room": room_name,
         },

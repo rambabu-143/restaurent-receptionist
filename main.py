@@ -76,8 +76,8 @@ voices = {
     "checkout": "kavya",
 }
 
-# Local Ollama model used for all agents' LLM inference.
-OLLAMA_MODEL = "llama3.2"
+# Groq model used for all agents' LLM inference.
+GROQ_MODEL = "llama-3.3-70b-versatile"
 
 # Appended to every agent's instructions.
 # Prevents llama3.2 from emitting markdown (Sarvam TTS rejects it) and
@@ -102,29 +102,23 @@ def sarvam_tts(speaker: str) -> sarvam.TTS:
         target_language_code="en-IN",
         model="bulbul:v3",
         speaker=speaker,
-        # Wait for at least 100 chars before synthesizing — prevents Sarvam from
-        # receiving single tokens and reading them letter by letter.
-        min_buffer_size=100,
     )
 
 
-def ollama_llm(parallel_tool_calls: bool | None = None) -> livekit_openai.LLM:
-    """Return an LLM client that talks to the local Ollama server.
+def groq_llm(parallel_tool_calls: bool | None = None) -> livekit_openai.LLM:
+    """Return an LLM client pointing at Groq's OpenAI-compatible API.
 
-    Ollama exposes an OpenAI-compatible REST API at /v1, so we reuse
-    livekit-plugins-openai and just point it at localhost:11434.
-    The api_key value is required by the client but ignored by Ollama.
-
-    max_completion_tokens=120 keeps responses short, which directly reduces
-    local inference time and makes the voice agent feel snappier.
+    Groq's LPU hardware gives sub-100ms time-to-first-token, which is the
+    main latency win over running Ollama locally.
+    max_completion_tokens=120 keeps responses short and snappy for voice.
     """
     kwargs = {}
     if parallel_tool_calls is not None:
         kwargs["parallel_tool_calls"] = parallel_tool_calls
     return livekit_openai.LLM(
-        model=OLLAMA_MODEL,
-        base_url="http://localhost:11434/v1",
-        api_key="ollama",
+        model=GROQ_MODEL,
+        base_url="https://api.groq.com/openai/v1",
+        api_key=os.environ["GROQ_API_KEY"],
         max_completion_tokens=120,
         **kwargs,
     )
@@ -312,7 +306,7 @@ class BaseAgent(Agent):
             async for chunk in stream:
                 buffer += chunk
                 # Yield on sentence end or once we have enough content.
-                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 80:
+                if re.search(r"[.!?]\s*$", buffer) or len(buffer) > 250:
                     cleaned = _strip_markdown(buffer)
                     buffer = ""
                     if cleaned:
@@ -355,7 +349,7 @@ class Greeter(BaseAgent):
             ),
             # parallel_tool_calls=False prevents the greeter from triggering
             # two transfers at once if the model gets confused.
-            llm=ollama_llm(parallel_tool_calls=False),
+            llm=groq_llm(parallel_tool_calls=False),
             tts=sarvam_tts(voices["greeter"]),
         )
         self.menu = menu
@@ -573,7 +567,7 @@ async def entrypoint(ctx: JobContext):
     session = AgentSession[UserData](
         userdata=userdata,
         stt=sarvam.STT(language="en-IN", model="saarika:v2.5"),
-        llm=ollama_llm(),
+        llm=groq_llm(),
         tts=sarvam_tts(voices["greeter"]),
         vad=silero.VAD.load(),
         # Caps the number of consecutive tool calls per turn to prevent loops.
