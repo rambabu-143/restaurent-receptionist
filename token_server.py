@@ -63,4 +63,5 @@ app.router.add_get("/api/token", token_handler)
 app.router.add_options("/api/token", options_handler)
 
 if __name__ == "__main__":
-    web.run_app(app, host="0.0.0.0", port=8080)
+    port = int(os.environ.get("PORT", 8080))
+    web.run_app(app, host="0.0.0.0", port=port)
