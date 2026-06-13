@@ -111,6 +111,7 @@ def _get_sarvam_tts(lang: str, role: str) -> sarvam.TTS:
             target_language_code=lang_code,
             model="bulbul:v3",
             speaker=speaker,
+            max_chunk_length=500,  # avoid multi-segment gaps on longer responses
         )
     return _sarvam_tts_cache[key]
 
@@ -354,8 +355,15 @@ class BaseAgent(Agent):
         lang = _detect_language(cleaned)
         tts = _get_sarvam_tts(lang, self._role) if lang != "en" else self._tts
 
-        async for audio_event in tts.synthesize(cleaned):
-            yield audio_event.frame
+        try:
+            async for audio_event in tts.synthesize(cleaned):
+                yield audio_event.frame
+        except Exception as e:
+            logger.error(f"TTS error (lang={lang}): {e}")
+            if tts is not self._tts:
+                # Sarvam failed — fall back to ElevenLabs so caller still hears a response
+                async for audio_event in self._tts.synthesize(cleaned):
+                    yield audio_event.frame
 
     async def _transfer_to_agent(self, name: str, context: RunContext_T) -> tuple[Agent, str]:
         """Switch the active agent to `name` and record the current one as prev
