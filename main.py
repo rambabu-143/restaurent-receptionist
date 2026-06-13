@@ -82,6 +82,50 @@ def _elevenlabs_tts(role: str) -> elevenlabs.TTS:
         model="eleven_multilingual_v2",
     )
 
+
+# Sarvam TTS speakers per language and agent role.
+# These native voices are used when the caller speaks Telugu or Hindi.
+_SARVAM_SPEAKERS: dict[str, dict[str, tuple[str, str]]] = {
+    "te": {
+        "greeter":     ("te-IN", "kavitha"),
+        "reservation": ("te-IN", "kavitha"),
+        "takeaway":    ("te-IN", "rohan"),
+        "checkout":    ("te-IN", "kavitha"),
+    },
+    "hi": {
+        "greeter":     ("hi-IN", "ritu"),
+        "reservation": ("hi-IN", "ritu"),
+        "takeaway":    ("hi-IN", "rahul"),
+        "checkout":    ("hi-IN", "ritu"),
+    },
+}
+
+_sarvam_tts_cache: dict[tuple[str, str], sarvam.TTS] = {}
+
+
+def _get_sarvam_tts(lang: str, role: str) -> sarvam.TTS:
+    key = (lang, role)
+    if key not in _sarvam_tts_cache:
+        lang_code, speaker = _SARVAM_SPEAKERS[lang][role]
+        _sarvam_tts_cache[key] = sarvam.TTS(
+            target_language_code=lang_code,
+            model="bulbul:v3",
+            speaker=speaker,
+        )
+    return _sarvam_tts_cache[key]
+
+
+def _detect_language(text: str) -> str:
+    """Return 'te' (Telugu), 'hi' (Hindi), or 'en' (default) based on Unicode script."""
+    total = max(len(text), 1)
+    telugu = sum(1 for c in text if "ఀ" <= c <= "౿")
+    hindi  = sum(1 for c in text if "ऀ" <= c <= "ॿ")
+    if telugu / total > 0.08:
+        return "te"
+    if hindi / total > 0.08:
+        return "hi"
+    return "en"
+
 # Groq model used for all agents' LLM inference.
 GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -293,11 +337,11 @@ class BaseAgent(Agent):
     async def tts_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings
     ) -> AsyncIterable[rtc.AudioFrame]:
-        """Buffer full response, strip markdown, synthesise with ElevenLabs.
+        """Buffer full response, strip markdown, then route to the right TTS.
 
-        Buffering the entire response before synthesis eliminates inter-sentence
-        pauses. eleven_multilingual_v2 handles English, Hindi, and other
-        languages without a separate TTS instance per language.
+        - Telugu / Hindi response → Sarvam bulbul:v3 with a native speaker voice
+        - English (or undetected) response → ElevenLabs eleven_multilingual_v2
+        Buffering eliminates inter-sentence pauses regardless of which TTS is used.
         """
         full_text = ""
         async for chunk in text:
@@ -307,7 +351,10 @@ class BaseAgent(Agent):
         if not cleaned:
             return
 
-        async for audio_event in self._tts.synthesize(cleaned):
+        lang = _detect_language(cleaned)
+        tts = _get_sarvam_tts(lang, self._role) if lang != "en" else self._tts
+
+        async for audio_event in tts.synthesize(cleaned):
             yield audio_event.frame
 
     async def _transfer_to_agent(self, name: str, context: RunContext_T) -> tuple[Agent, str]:
@@ -326,6 +373,8 @@ class BaseAgent(Agent):
 class Greeter(BaseAgent):
     """Entry point for every call. Greets the caller and routes them to the
     right agent based on whether they want a reservation or a takeaway order."""
+
+    _role = "greeter"
 
     def __init__(self, menu: str) -> None:
         super().__init__(
@@ -370,6 +419,8 @@ class Greeter(BaseAgent):
 class Reservation(BaseAgent):
     """Collects reservation details: time, name, and phone number.
     Confirms everything with the caller before finalising."""
+
+    _role = "reservation"
 
     def __init__(self) -> None:
         super().__init__(
@@ -419,6 +470,8 @@ class Takeaway(BaseAgent):
     """Takes and manages the caller's food order.
     Hands off to Checkout once the order is confirmed."""
 
+    _role = "takeaway"
+
     def __init__(self, menu: str) -> None:
         super().__init__(
             instructions=(
@@ -462,6 +515,8 @@ class Takeaway(BaseAgent):
 class Checkout(BaseAgent):
     """Handles payment: confirms the bill amount then collects card details
     (number, expiry, CVV) step by step before completing the order."""
+
+    _role = "checkout"
 
     def __init__(self, menu: str) -> None:
         super().__init__(
