@@ -93,10 +93,10 @@ _SARVAM_CONFIG: dict[str, dict[str, tuple[str, str]]] = {
         "checkout":    ("te-IN", "simran"),
     },
     "hi": {
-        "greeter":     ("hi-IN", "ritu"),
-        "reservation": ("hi-IN", "ritu"),
+        "greeter":     ("hi-IN", "simran"),
+        "reservation": ("hi-IN", "simran"),
         "takeaway":    ("hi-IN", "rahul"),
-        "checkout":    ("hi-IN", "ritu"),
+        "checkout":    ("hi-IN", "simran"),
     },
 }
 
