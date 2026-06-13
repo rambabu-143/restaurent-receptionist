@@ -83,22 +83,20 @@ def _elevenlabs_tts(role: str) -> elevenlabs.TTS:
     )
 
 
-# Sarvam TTS config per language and agent role.
-# Telugu uses bulbul:v3-beta (has a "Customer Care" profile — better for conversational use).
-# Hindi uses bulbul:v3 which is stable and natural.
-# (model, lang_code, speaker)
-_SARVAM_CONFIG: dict[str, dict[str, tuple[str, str, str]]] = {
+# Sarvam TTS config per language and agent role — all using bulbul:v3.
+# (lang_code, speaker)
+_SARVAM_CONFIG: dict[str, dict[str, tuple[str, str]]] = {
     "te": {
-        "greeter":     ("bulbul:v3-beta", "te-IN", "roopa"),
-        "reservation": ("bulbul:v3-beta", "te-IN", "roopa"),
-        "takeaway":    ("bulbul:v3-beta", "te-IN", "rahul"),
-        "checkout":    ("bulbul:v3-beta", "te-IN", "roopa"),
+        "greeter":     ("te-IN", "kavya"),
+        "reservation": ("te-IN", "kavya"),
+        "takeaway":    ("te-IN", "rahul"),
+        "checkout":    ("te-IN", "kavya"),
     },
     "hi": {
-        "greeter":     ("bulbul:v3", "hi-IN", "ritu"),
-        "reservation": ("bulbul:v3", "hi-IN", "ritu"),
-        "takeaway":    ("bulbul:v3", "hi-IN", "rahul"),
-        "checkout":    ("bulbul:v3", "hi-IN", "ritu"),
+        "greeter":     ("hi-IN", "ritu"),
+        "reservation": ("hi-IN", "ritu"),
+        "takeaway":    ("hi-IN", "rahul"),
+        "checkout":    ("hi-IN", "ritu"),
     },
 }
 
@@ -108,12 +106,13 @@ _sarvam_tts_cache: dict[tuple[str, str], sarvam.TTS] = {}
 def _get_sarvam_tts(lang: str, role: str) -> sarvam.TTS:
     key = (lang, role)
     if key not in _sarvam_tts_cache:
-        model, lang_code, speaker = _SARVAM_CONFIG[lang][role]
+        lang_code, speaker = _SARVAM_CONFIG[lang][role]
         _sarvam_tts_cache[key] = sarvam.TTS(
             target_language_code=lang_code,
-            model=model,
+            model="bulbul:v3",
             speaker=speaker,
-            max_chunk_length=500,
+            max_chunk_length=2000,  # docs say max 2500 chars — keep full response in one segment
+            speech_sample_rate=22050,
         )
     return _sarvam_tts_cache[key]
 
