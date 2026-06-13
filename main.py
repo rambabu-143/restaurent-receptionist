@@ -250,11 +250,11 @@ async def update_phone(
 
 
 @function_tool()
-async def to_greeter(context: RunContext_T) -> Agent:
+async def to_greeter(context: RunContext_T) -> tuple[Agent, str]:
     """Called when user asks any unrelated questions or requests
     any other services not in your job description."""
     curr_agent: BaseAgent = context.session.current_agent
-    return await curr_agent._transfer_to_agent("greeter", context)
+    return await curr_agent._transfer_to_agent("greeter", context)  # returns (agent, "done")
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +371,7 @@ class BaseAgent(Agent):
         userdata = context.userdata
         next_agent = userdata.agents[name]
         userdata.prev_agent = context.session.current_agent
-        return next_agent, f"Transferring to {name}."
+        return next_agent, "done"
 
 
 # ---------------------------------------------------------------------------
@@ -395,10 +395,11 @@ class Greeter(BaseAgent):
                 "- If the call state already has customer data, the caller has been transferred back. "
                 "Do NOT re-introduce yourself. Just say something like 'Is there anything else I can help you with?'\n\n"
                 "ROUTING:\n"
-                "- Reservation or booking a table → call to_reservation\n"
-                "- Takeaway, food order, or delivery → call to_takeaway\n"
+                "- Reservation or booking a table → call to_reservation immediately\n"
+                "- Takeaway, food order, or delivery → call to_takeaway immediately\n"
                 "- Menu question → briefly list what is available\n"
-                "- Always confirm what the caller needs before transferring"
+                "- NEVER say 'I will transfer you', 'connecting you', 'one moment', or anything about transferring. "
+                "Just call the function silently — the next agent will greet the caller."
                 + PLAIN_TEXT_RULE
             ),
             # parallel_tool_calls=False prevents the greeter from triggering
