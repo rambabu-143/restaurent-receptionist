@@ -87,10 +87,10 @@ def _elevenlabs_tts(role: str) -> elevenlabs.TTS:
 # (lang_code, speaker)
 _SARVAM_CONFIG: dict[str, dict[str, tuple[str, str]]] = {
     "te": {
-        "greeter":     ("te-IN", "kavya"),
-        "reservation": ("te-IN", "kavya"),
+        "greeter":     ("te-IN", "simran"),
+        "reservation": ("te-IN", "simran"),
         "takeaway":    ("te-IN", "rahul"),
-        "checkout":    ("te-IN", "kavya"),
+        "checkout":    ("te-IN", "simran"),
     },
     "hi": {
         "greeter":     ("hi-IN", "ritu"),
