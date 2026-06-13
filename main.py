@@ -83,20 +83,22 @@ def _elevenlabs_tts(role: str) -> elevenlabs.TTS:
     )
 
 
-# Sarvam TTS speakers per language and agent role.
-# These native voices are used when the caller speaks Telugu or Hindi.
-_SARVAM_SPEAKERS: dict[str, dict[str, tuple[str, str]]] = {
+# Sarvam TTS config per language and agent role.
+# Telugu uses bulbul:v3-beta (has a "Customer Care" profile — better for conversational use).
+# Hindi uses bulbul:v3 which is stable and natural.
+# (model, lang_code, speaker)
+_SARVAM_CONFIG: dict[str, dict[str, tuple[str, str, str]]] = {
     "te": {
-        "greeter":     ("te-IN", "kavitha"),
-        "reservation": ("te-IN", "kavitha"),
-        "takeaway":    ("te-IN", "rohan"),
-        "checkout":    ("te-IN", "kavitha"),
+        "greeter":     ("bulbul:v3-beta", "te-IN", "roopa"),
+        "reservation": ("bulbul:v3-beta", "te-IN", "roopa"),
+        "takeaway":    ("bulbul:v3-beta", "te-IN", "rahul"),
+        "checkout":    ("bulbul:v3-beta", "te-IN", "roopa"),
     },
     "hi": {
-        "greeter":     ("hi-IN", "ritu"),
-        "reservation": ("hi-IN", "ritu"),
-        "takeaway":    ("hi-IN", "rahul"),
-        "checkout":    ("hi-IN", "ritu"),
+        "greeter":     ("bulbul:v3", "hi-IN", "ritu"),
+        "reservation": ("bulbul:v3", "hi-IN", "ritu"),
+        "takeaway":    ("bulbul:v3", "hi-IN", "rahul"),
+        "checkout":    ("bulbul:v3", "hi-IN", "ritu"),
     },
 }
 
@@ -106,12 +108,12 @@ _sarvam_tts_cache: dict[tuple[str, str], sarvam.TTS] = {}
 def _get_sarvam_tts(lang: str, role: str) -> sarvam.TTS:
     key = (lang, role)
     if key not in _sarvam_tts_cache:
-        lang_code, speaker = _SARVAM_SPEAKERS[lang][role]
+        model, lang_code, speaker = _SARVAM_CONFIG[lang][role]
         _sarvam_tts_cache[key] = sarvam.TTS(
             target_language_code=lang_code,
-            model="bulbul:v3",
+            model=model,
             speaker=speaker,
-            max_chunk_length=500,  # avoid multi-segment gaps on longer responses
+            max_chunk_length=500,
         )
     return _sarvam_tts_cache[key]
 
@@ -140,8 +142,11 @@ PLAIN_TEXT_RULE = (
     "This is a conversation, not a phone menu.\n"
     "- Keep every response short — one or two sentences maximum.\n"
     "- Ask only one question at a time.\n"
-    "- LANGUAGE: Detect the language the caller is speaking and always respond in that same language. "
-    "If they speak Telugu, respond in Telugu. If Hindi, respond in Hindi. If English, respond in English."
+    "- LANGUAGE: Always respond in the same language the caller uses.\n"
+    "  - Telugu: use simple everyday spoken Telugu (Hyderabad/Andhra style), not formal or literary. "
+    "Short sentences only. Do not mix in English words unless necessary.\n"
+    "  - Hindi: use simple conversational Hindi, not formal. Short sentences only.\n"
+    "  - English: respond in natural Indian English."
 )
 
 
